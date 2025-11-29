@@ -1,0 +1,16 @@
+# -*- coding: utf-8 -*-
+
+# API 통신 및 데이터 수집
+pyupbit
+requests
+python-binance
+ccxt
+
+# 데이터 처리 및 분석
+pandas
+
+# 설정 관리 (API 키 등을 안전하게 관리)
+python-dotenv
+
+# 웹 서버 (TradingView Webhook 수신 시 필요)
+Flask

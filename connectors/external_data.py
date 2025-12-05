@@ -1,11 +1,11 @@
+# 파일명: connectors/external_data.py
 import requests
 import json
-import time # 시간 관리를 위해 time 모듈 추가
+import time
 from config import settings
-from config.settings import MIN_FETCH_INTERVAL_SEC
 
-# 해외 USDT 가격을 1.0 USD로 가정 (스테이블 코인이므로)
-GLOBAL_USDT_PRICE_USD = 1.0 
+GLOBAL_USDT_PRICE_USD = 1.0  # 해외 USDT 가격을 1.0 USD로 가정 (스테이블 코인이므로)
+MIN_FETCH_INTERVAL_SEC = 900 # 환율 캐싱 주기 (15분)
 
 class ExternalData:
     """
@@ -77,24 +77,30 @@ class ExternalData:
 
 
     def calculate_kimchi_premium(self, upbit_usdt_krw_price: float):
-        # (로직 변경 없음)
-        if upbit_usdt_krw_price is None:
-            return None
-
-        # 캐싱 로직이 적용된 환율 조회 함수 호출
+      
         exchange_rate = self.get_usd_krw_exchange_rate()
-        
-        if exchange_rate is None:
-            # 캐시도 없고 API 요청도 실패했을 경우
+        if upbit_usdt_krw_price is None or exchange_rate is None:
             print("[ERROR] 환율 데이터 부족으로 김프 계산 불가.")
             return None
-
-        # 해외 가격을 원화로 환산 (글로벌 USDT 가격은 1.0 USD로 가정)
-        global_price_krw = GLOBAL_USDT_PRICE_USD * exchange_rate
-        
-        # 김치 프리미엄 계산 공식
-        kimchi_premium_rate = (upbit_usdt_krw_price / global_price_krw - 1) * 100
-        
+        global_price_krw = GLOBAL_USDT_PRICE_USD * exchange_rate                         # 해외 가격을 원화로 환산 (글로벌 USDT 가격은 1.0 USD로 가정)
+        kimchi_premium_rate = (upbit_usdt_krw_price / global_price_krw - 1) * 100       # 김치 프리미엄 계산 공식
         return kimchi_premium_rate
 
-# ... (main 테스트 로직 유지)
+    def get_binance_price(self, symbol): # 💡 ="BTCUSDT" 제거 (필수 인자로 변경)
+        """
+        Binance API에서 특정 심볼(예: BTCUSDT, ETHUSDT)의 현재 가격을 조회합니다.
+        :param symbol: 조회할 심볼 문자열 (예: "BTCUSDT")
+        """
+        try:
+            url = "https://api.binance.com/api/v3/ticker/price"
+            params = {"symbol": symbol}
+            
+            response = requests.get(url, params=params, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            
+            return float(data["price"])
+            
+        except Exception as e:
+            print(f"[ERROR] 바이낸스 {symbol} 가격 조회 실패: {e}")
+            return None

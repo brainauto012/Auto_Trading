@@ -11,64 +11,69 @@ class OrderManager:
         print("✅ OrderManager 초기화 완료")
 
     def get_current_balance(self, ticker="USDT"):
-        """
-        특정 코인(USDT)과 원화(KRW)의 현재 잔고를 조회합니다.
-        
-        :return: (USDT 잔고, KRW 잔고) 튜플
-        """
+        """USDT 또는 BTC 등 특정 코인과 KRW 잔고를 조회합니다."""
         try:
-            # UpbitAPI 인스턴스를 통해 pyupbit의 get_balances 호출
             balances = self.upbit_api.upbit.get_balances() 
-            
-            usdt_balance = 0.0
+            symbol_balance = 0.0
             krw_balance = 0.0
             
             for balance in balances:
                 currency = balance['currency']
-                # 잔고와 잠겨있는 잔고(주문 중)를 합산하여 총 잔고 계산
+                # 주문 중인 금액(locked)까지 포함하여 총 잔고 계산
                 total_balance = float(balance['balance']) + float(balance['locked'])
                 
                 if currency == ticker:
-                    usdt_balance = total_balance
+                    symbol_balance = total_balance
                 elif currency == 'KRW':
                     krw_balance = total_balance
             
-            return usdt_balance, krw_balance
+            return symbol_balance, krw_balance
         
         except Exception as e:
             print(f"[ERROR] 잔고 조회 중 예외 발생: {e}")
             return 0.0, 0.0
 
-    def execute_market_order(self, action: str, amount_krw: float, usdt_balance: float):
+    def execute_market_order(self, action: str, amount: float, symbol: str):
         """
-        시장가 주문을 실행합니다. (USDT/KRW 마켓)
+        시장가 주문을 실행합니다.
         
         :param action: 'BUY' 또는 'SELL'
-        :param amount_krw: 매수 시 사용할 원화 금액
-        :param usdt_balance: 매도 시 사용할 USDT 수량
-        :return: 주문 결과 (dict)
+        :param amount: 매수 시에는 '원화 금액(KRW)', 매도 시에는 '매도 수량(Coin Volume)'
+        :param symbol: 매매할 코인 (USDT, BTC 등)
         """
-        ticker = "KRW-USDT"
+        ticker = f"KRW-{symbol}"
         
-        # ⚠️ 주문 실행 대신 로그를 출력하도록 구현합니다. 실제 투입 시 주석 해제 필요!
-        if settings.UPBIT_ACCESS_KEY == "YOUR_UPBIT_ACCESS_KEY":
-            print(f"[SIMULATION] {action} 주문: {action} {amount_krw:,.0f} KRW 상당 USDT (잔고: {usdt_balance:.4f})")
+        # 1. 시뮬레이션 모드 확인 (최우선)
+        # settings.py의 IS_SIMULATION이 True이면 실제 주문을 넣지 않음
+        if getattr(settings, 'IS_SIMULATION', False):
+            target_unit = "KRW" if action == "BUY" else symbol
+            print(f"  @🚨EXECUTE@ {action} {symbol} 주문 (가상): {amount:,.0f} {target_unit} 상당")
             return {"uuid": "SIMULATED_ORDER_UUID", "state": "done"}
 
-        if action == 'BUY':
-            # 매수: 원화 마켓에서는 amount_krw 만큼의 시장가 매수
-            # 리턴 값은 pyupbit.buy_market_order의 결과 (주문 UUID, 상태 등 포함)
-            result = self.upbit_api.upbit.buy_market_order(ticker, amount_krw)
-            print(f"[ORDER] USDT 매수 주문 실행. 금액: {amount_krw:,.0f} KRW. 결과: {result.get('uuid')}")
-            return result
-        
-        elif action == 'SELL':
-            # 매도: 보유한 USDT 전량을 시장가 매도
-            # 수량은 usdt_balance를 사용
-            result = self.upbit_api.upbit.sell_market_order(ticker, usdt_balance)
-            print(f"[ORDER] USDT 전량 매도 주문 실행. 수량: {usdt_balance:.4f}. 결과: {result.get('uuid')}")
-            return result
-        
-        else:
-            print("[INFO] 유효하지 않은 주문 요청입니다.")
+        # 2. API 키 미설정 확인 (이중 안전장치)
+        if settings.UPBIT_ACCESS_KEY == "YOUR_UPBIT_ACCESS_KEY":
+            target_unit = "KRW" if action == "BUY" else symbol
+            print(f"  @⚠️WARNING@ API 키 미설정. {action} {symbol} 주문 시뮬레이션 처리: {amount:,.0f} {target_unit}")
+            return {"uuid": "SIMULATED_ORDER_UUID", "state": "done"}
+
+        # 3. 실제 주문 실행
+        try:
+            if action == 'BUY':
+                # 매수: 금액(KRW) 기준 시장가 매수
+                result = self.upbit_api.upbit.buy_market_order(ticker, amount)
+                print(f"[ORDER] 🚨 {symbol} 실제 매수 주문 실행. 금액: {amount:,.0f} KRW.")
+                return result
+            
+            elif action == 'SELL':
+                # 매도: 수량(Volume) 기준 시장가 매도
+                result = self.upbit_api.upbit.sell_market_order(ticker, amount)
+                print(f"[ORDER] 🚨 {symbol} 실제 매도 주문 실행. 수량: {amount:,.8f} {symbol}.")
+                return result
+            
+            else:
+                print(f"[ERROR] 알 수 없는 주문 액션: {action}")
+                return None
+                
+        except Exception as e:
+            print(f"[ERROR] 주문 실행 중 오류 발생 ({action} {symbol}): {e}")
             return None
